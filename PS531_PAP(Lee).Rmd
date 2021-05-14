@@ -1,0 +1,380 @@
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+library(readr)
+library(dplyr)
+library(forcats)
+library(tidyverse)
+library(MASS)
+library(coin)
+library(xtable)
+library(stargazer)
+library(DeclareDesign)
+library(knitr)
+library(DT)
+library(RItools)
+library(optmatch)
+library(survival)
+library(survey)
+library(randomizr)
+```
+
+
+```{r, echo=TRUE, cache=FALSE}
+setwd("~/Younghyun/2021 Spring")
+ess18 <- read_csv("ess18.csv")
+ess18 <- ess18[, c("atchctr", "immg", "gndr", "rlgdnm", "agea", "edu", "ctzcntr")]
+ess18 <- ess18[!(ess18$atchctr > 10), ] #atchctr: sense of belonging in the country
+immigrant <- ess18[ess18$immg == "1", ] #making data only for immigrants
+```
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+ess <- read_csv("ess18.csv")
+nomiss <- ess[ess$immg == "1", ] #without missing data
+sum(with(nomiss, atchctr > 10)) #only 31 people
+sum(with(nomiss, ctzcntr > 2)) #only 15 people
+mean(nomiss$atchctr[nomiss$ctzcntr > 2])
+
+nomiss <- mutate(nomiss, citizen = if_else(ctzcntr =="1", 1, 0))
+
+mean(nomiss$citizen[nomiss$atchctr > 10])
+hist(nomiss$citizen[nomiss$atchctr > 10])
+```
+
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE}
+#omitting variables
+##gender
+immigrant <- immigrant[!(immigrant$gndr > 2), ]
+sum(with(immigrant, gndr==1))
+##religion 
+immigrant <- immigrant[!(immigrant$rlgdnm > 66), ]
+
+##age
+immigrant <- immigrant[!(immigrant$agea >150), ]
+
+##education
+immigrant$edu
+immigrant <- immigrant[!(immigrant$edu > 10), ]
+
+##citizen
+immigrant <- immigrant[!(immigrant$ctzcntr > 2), ]
+```
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+#explanatory variables: citizenship, gender, religion, age, level of education
+##outcome variable: sense of belonging
+##N=4,028
+
+#recoding variables
+##gender
+immigrant <- mutate(immigrant, gndr = if_else(gndr =="1", 0, 1)) 
+#0 if male, 1 if female
+
+##citizenship (legal integration)
+immigrant <- immigrant[!(immigrant$ctzcntr > 2), ]
+immigrant$ctzcntr
+#recoding citizenship
+immigrant <- mutate(immigrant, citizen = if_else(ctzcntr =="1", 1, 0))
+sum(with(immigrant, citizen==0)); sum(with(immigrant, citizen==1))
+##no citizen =0, citizenship = 1
+mean(immigrant$citizen)
+
+##religion 
+immigrant$rlgdnm
+immigrant <- mutate(immigrant, religion = if_else(rlgdnm < 5, 1, 0))
+immigrant$religion
+##non-Christian= 0, Christian = 1
+##Christian = Roman Catholic, Protestant, Eastern Orthodox, Other Christian denomination
+##non-Christian = Jewish, Islam, Eastern religions, other non-Christian religions
+```
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+#step 0 : simple regression
+lm1 <- lm(atchctr ~ citizen + agea + religion + gndr +edu, data=immigrant)
+plot(immigrant$citizen, immigrant$agea)
+summary(lm1) #legal
+coef(lm1)
+##positive relationship
+## *p < 0.05, **p < 0.01, ***p < 0.001.
+
+lm2 <- lm_robust(atchctr ~ citizen + agea + religion + gndr + edu, data=immigrant)
+summary(lm2)
+
+#residual plots
+plot(lm1)
+
+#relationship between variables
+par(mfrow = c(2, 2))
+plot(immigrant$citizen, immigrant$atchctr, xlab="sense of belonging", ylab="citizenship")
+abline(lm(atchctr~citizen, data=immigrant))
+
+plot(immigrant$atchctr, immigrant$citizen, xlab="sense of belonging", ylab="citizenship")
+
+
+old.par <- par(mfrow=c(2,2))
+
+#distribution of missing data and full data after omitting data
+hist(immigrant$citizen, 
+     main="distribution after omitting missing data", xlab="citizenship")
+hist(nomiss$citizen[nomiss$atchctr > 10], 
+     main="distribution of missing data", xlab="citizenship")
+hist(immigrant$atchctr, seq(0, 10, 1), 
+     main="distribution after omitting missing data", xlab="sense of belonging")
+hist(nomiss$atchctr[nomiss$ctzcntr > 2], seq(0, 10, 1), 
+     main="distribution of missing data", xlab="sense of belonging")
+```
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+library(quantreg)
+library(base)
+#population
+set.seed(1235)
+pop <- declare_population(immigrant)
+samp1 <- declare_sampling(n=1000)
+design1 <- pop + samp1
+#declare estimand
+##estimand 1
+fun1 <- function(data){
+  bs <- coef(lm(atchctr ~ citizen, data=immigrant))
+  return(data.frame(
+  estimand  = bs[c("citizen")],
+  stringsAsFactors = FALSE
+  ))
+}
+estimand1 <- declare_inquiry(
+  handler = fun1)
+
+design1_plus_estimands <- pop + samp1 + estimand1
+kable(estimand1(immigrant), caption = "Estimands 1")
+
+##estimator 1
+estimator1 <- declare_estimator(atchctr ~ citizen + agea + gndr+ religion + edu,
+                                model = lm,
+                                term = c("citizen"),
+                                estimand = c("citizen"),
+                                label = "linear_model") 
+
+##declare full design with estimator 1
+set.seed(1111)
+design_full1 <- design1_plus_estimands + estimator1
+simulations <- simulate_design(design_full1, sims =1000)
+simulations
+xtable(head(simulations[, c(2,4,5,7,8,9,10)], n=10))
+mean(simulations$statistic); mean(simulations$estimate) 
+mean(simulations$p.value); mean(simulations$std.error)
+
+diagnosis1 <- diagnose_design(design_full1, sims=1000)
+diagnosis1$diagnosands_df
+diagnosis1
+xtable(head(diagnosis1$diagnosands_df))
+
+#graph
+summary_df <-
+  simulations %>%
+  summarize(
+    'Mean Estimate' = mean(estimate),
+    'Mean Estimand' = mean(estimand)
+    ) %>%
+  gather(key, value, 'Mean Estimate', 'Mean Estimand')
+ 
+ggplot(simulations, aes(estimate)) +
+  geom_histogram(bins=50) +
+  geom_vline(data = summary_df, aes(xintercept = value, color = key)) +
+  facet_wrap(~estimator_label) +
+   theme(legend.position = "bottom")
+ 
+##p-values
+summary_df <-
+  simulations %>%
+  summarize('mean p-value' = mean(p.value)) %>%
+  gather (key, value, 'mean p-value')
+par(mfrow = c(2, 2))
+ggplot(simulations, aes(p.value), label=value) +
+  geom_histogram(bins = 50) +
+  geom_vline(data = summary_df, aes(xintercept = value, color=key)) +
+  facet_wrap(~estimator_label) +
+  theme(legend.position = "bottom")
+``` 
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+#start of matching 
+#step 1: formula for score
+library(arm)
+library(optmatch)
+library(RItools)
+immigrant0 <- immigrant
+set.seed(123)
+mfmla <- reformulate(c("agea", "gndr", "religion", "edu"), response="citizen")
+mfmla
+xb1 <- xBalance(mfmla,
+                 strata = list(raw=NULL),
+                data= immigrant0,
+                report = c("std.diffs", "z.scores", "adj.means", 
+                           "adj.mean.diffs", "chisquare.test", "p.values"))
+
+glm <- glm(mfmla, data=immigrant0, family=binomial) #Bayes Generalized Linear Model
+boxplot(glm, main ="", names=c("Control", "Treatment"))
+
+#step 2: add scores back to data
+immigrant0$pscore <- predict(glm, type="link")
+
+#step 3: make distance matrices
+psdist <- match_on(citizen ~ pscore, data=immigrant0)
+psdist
+##look at a bit of this distance matrix
+as.matrix(psdist)[1:5, 1:5]
+mhdist <- match_on(mfmla, data=immigrant0, method = "mahalanobis")
+as.matrix(mhdist)[1:5, 1:5]
+
+#step 4: match on distance (simple propensity score and Mahalanobis distance)
+fm1 <- fullmatch(mhdist, data=immigrant0, min.controls = 0.5)
+summary(fm1)
+
+#propensity score and Mahalanobis distance
+fm2 <- fullmatch(psdist + mhdist, data=immigrant0, min.controls = 0)
+summary(fm2)
+immigrant0$fm2 <- NULL
+immigrant0[names(fm2), "fm3"] <- fm2
+
+summary(fm1)
+summary(fm2)
+
+##add matched set indicators back to data
+immigrant0$fm1 <- NULL
+immigrant0[names(fm1), "fm1"] <- fm1
+
+immigrant0$fm2 <- NULL
+immigrant0[names(fm2), "fm2"] <- fm2
+
+#step 5: did we adjust enough?
+xb2 <- xBalance(mfmla,
+                strata = list(raw=NULL, fm1=~fm1),
+                data = immigrant0,
+                report = c("std.diffs", "z.scores", "adj.means", 
+                           "adj.mean.diffs", "chisquare.test", "p.values"))
+
+xb3 <- xBalance(mfmla,
+                strata = list(raw=NULL, fm2=~fm2),
+                data = immigrant0,
+                report = c("std.diffs", "z.scores", "adj.means", 
+                           "adj.mean.diffs", "chisquare.test", "p.values"))
+xb2; xb3
+plot(xb3)
+
+##scalar distance on ##baseline outcome
+with(immigrant0, mean(atchctr[citizen ==1]) - mean(atchctr[citizen ==0]))
+tmp <-immigrant0$atchctr
+names(tmp) <- rownames(immigrant0)
+absdist <- match_on(tmp, z=immigrant0$citizen)
+
+fm3 <- fullmatch(psdist + caliper(absdist, 2) + caliper(mhdist, 50), 
+                 data=immigrant0, tol = 0.00001, min.controls = 0)
+summary(fm3)
+
+immigrant0$fm3 <- NULL
+immigrant0[names(fm3), "fm3"] <- fm3
+
+xb4 <- xBalance(mfmla,
+                strata = list(raw=NULL, fm2=~fm2),
+                data = immigrant0,
+                report = c("std.diffs", "z.scores", "adj.means", 
+                           "adj.mean.diffs", "chisquare.test", "p.values"))
+xb4
+plot(xb4)
+##initial difference
+boxplot(immigrant0$atchctr ~ immigrant0$citizen,
+        names = c("control", "treatment"))
+initial <- mean(immigrant0$atchctr[immigrant0$citizen == 1]) - 
+  mean(immigrant0$atchctr[immigrant0$citizen == 0])
+initial
+
+diffswithinsets <- immigrant0 %>%
+  group_by(fm2) %>%
+  summarize(meandiff = mean(atchctr[citizen == 1]) - mean(atchctr[citizen == 0]))
+summary(diffswithinsets$meandiff)
+
+```
+
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+set.seed(1111)
+##second estimator with matched dataset
+pop2 <- declare_population(immigrant0)
+outcomes2 <- declare_potential_outcomes(Y_Z_0 = as.numeric(immigrant0$atchctr),
+                                        Y_Z_1 = Y_Z_0 + 0.6)
+inquiry2 <- declare_inquiry(ATE = mean(Y_Z_1 - Y_Z_0))
+assignment2 <- declare_assignment(m=200, label="Z")
+reveal2 <- declare_reveal(Y,Z)
+samp2 <- declare_sampling(n=1000)
+##fixed effect: matching with propensity score
+estimator2 <- declare_estimator(atchctr ~ citizen, fixed.effects = ~fm2, 
+                                model = lm, label="lm") 
+
+des2 <- pop2 + outcomes2 + +samp2 + inquiry2 + assignment2 + reveal2 + estimator2
+
+
+set.seed(111)
+#simulation
+sim2 <- simulate_design(des2, sims = 1000)
+sim2
+
+#diagnosis
+diag2 <- diagnose_design(des2, bootstrap_sims=0, sims = 1000)
+diag2
+xtable(head(diag2$diagnosands_df))
+
+### xtable(head(sim2[, c(2,4,5,7,8,9,10)], n=10))
+mean(sim2$statistic)
+mean(sim2$estimate)
+mean(sim2$p.value) 
+mean(sim2$std.error)
+
+#graph
+set.seed(1111)
+summary_df2 <-
+  sim2 %>%
+  summarize(
+    'Mean Estimate' = mean(estimate),
+    'Mean Estimand' = mean(estimand)
+    ) %>%
+  gather(key, value, 'Mean Estimate', 'Mean Estimand')
+ 
+set.seed(1111)
+#distribution of estimates
+ggplot(sim2, aes(estimate)) +
+  geom_histogram(bins=50) +
+  geom_vline(data = summary_df2, aes(xintercept = value, color = key)) +
+  facet_wrap(~estimator_label)+
+  theme(legend.position = "bottom")
+ 
+##p-values
+set.seed(11111)
+summary_df2<-
+  sim2 %>%
+  summarize('mean p-value' = mean(p.value)) %>%
+  gather (key, value, 'mean p-value')
+
+ggplot(sim2, aes(p.value), label=value) +
+  geom_histogram(bins = 50) +
+  geom_vline(data = summary_df2, aes(xintercept = value, color=key)) +
+  facet_wrap(~estimator_label) +
+  theme(legend.position = "bottom")
+```
+
+```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+#creating a fake data for mock analysis
+set.seed(111)
+fakey <- sample(seq(0,10,1), 4028, replace=TRUE)
+immigrant0$fakey <- data.frame(fakey)
+#simple linear regression model
+mock1 <- lm(as.matrix(fakey) ~ citizen + agea + gndr + religion + edu, data=immigrant0)
+summary(mock1)
+
+#OLS with matching
+mock2 <- lm(as.matrix(fakey) ~ citizen, fixed_effects = ~fm2, 
+            data=immigrant0, subset= !is.na(immigrant0$fm2))
+summary(mock1)
+summary(mock2)
+
+stargazer(mock1, mock2, header=FALSE, title="Regression Results")
+```
