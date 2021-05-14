@@ -196,7 +196,7 @@ ggplot(simulations, aes(p.value), label=value) +
   theme(legend.position = "bottom")
 ``` 
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+```{r echo=FALSE, fig.show='hide', message=FALSE, warning=FALSE, cache=FALSE, results=FALSE}
 #start of matching 
 #step 1: formula for score
 library(arm)
@@ -227,10 +227,13 @@ mhdist <- match_on(mfmla, data=immigrant0, method = "mahalanobis")
 as.matrix(mhdist)[1:5, 1:5]
 
 #step 4: match on distance (simple propensity score and Mahalanobis distance)
-fm1 <- fullmatch(mhdist, data=immigrant0, min.controls = 0.5)
+#propensity score and Mahalanobis distance
+#minimum ratio = 0.5
+fm1 <- fullmatch(psdist + mhdist, data=immigrant0, min.controls = 0.5)
 summary(fm1)
 
 #propensity score and Mahalanobis distance
+#minimum ratio = 0
 fm2 <- fullmatch(psdist + mhdist, data=immigrant0, min.controls = 0)
 summary(fm2)
 immigrant0$fm2 <- NULL
@@ -246,21 +249,6 @@ immigrant0[names(fm1), "fm1"] <- fm1
 immigrant0$fm2 <- NULL
 immigrant0[names(fm2), "fm2"] <- fm2
 
-#step 5: did we adjust enough?
-xb2 <- xBalance(mfmla,
-                strata = list(raw=NULL, fm1=~fm1),
-                data = immigrant0,
-                report = c("std.diffs", "z.scores", "adj.means", 
-                           "adj.mean.diffs", "chisquare.test", "p.values"))
-
-xb3 <- xBalance(mfmla,
-                strata = list(raw=NULL, fm2=~fm2),
-                data = immigrant0,
-                report = c("std.diffs", "z.scores", "adj.means", 
-                           "adj.mean.diffs", "chisquare.test", "p.values"))
-xb2; xb3
-plot(xb3)
-
 ##scalar distance on ##baseline outcome
 with(immigrant0, mean(atchctr[citizen ==1]) - mean(atchctr[citizen ==0]))
 tmp <-immigrant0$atchctr
@@ -273,6 +261,24 @@ summary(fm3)
 
 immigrant0$fm3 <- NULL
 immigrant0[names(fm3), "fm3"] <- fm3
+
+
+#step 5: did we adjust enough?
+xb2 <- xBalance(mfmla,
+                strata = list(raw=NULL, fm1=~fm1, fm2=~fm2, fm3=~fm3),
+                data = immigrant0,
+                report = c("std.diffs", "z.scores", "adj.means", 
+                           "adj.mean.diffs", "chisquare.test", "p.values"))
+plot(xb2)
+
+xb3 <- xBalance(mfmla,
+                strata = list(raw=NULL, fm2=~fm2),
+                data = immigrant0,
+                report = c("std.diffs", "z.scores", "adj.means", 
+                           "adj.mean.diffs", "chisquare.test", "p.values"))
+xb2; xb3
+plot(xb3)
+
 
 xb4 <- xBalance(mfmla,
                 strata = list(raw=NULL, fm2=~fm2),
@@ -375,6 +381,10 @@ mock2 <- lm(as.matrix(fakey) ~ citizen, fixed_effects = ~fm2,
             data=immigrant0, subset= !is.na(immigrant0$fm2))
 summary(mock1)
 summary(mock2)
+
+mock3 <- lm_robust(as.matrix(fakey) ~ citizen, fixed_effects = ~fm2, 
+            data=immigrant0, subset= !is.na(immigrant0$fm2))
+summary(mock3)
 
 stargazer(mock1, mock2, header=FALSE, title="Regression Results")
 ```
