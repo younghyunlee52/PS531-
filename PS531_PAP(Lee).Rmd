@@ -1,5 +1,5 @@
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+```{r, installing necessary packages}
 library(readr)
 library(dplyr)
 library(forcats)
@@ -19,7 +19,7 @@ library(randomizr)
 ```
 
 
-```{r, echo=TRUE, cache=FALSE}
+```{r, data setting and data cleaning}
 setwd("~/Younghyun/2021 Spring")
 ess18 <- read_csv("ess18.csv")
 ess18 <- ess18[, c("atchctr", "immg", "gndr", "rlgdnm", "agea", "edu", "ctzcntr")]
@@ -27,7 +27,7 @@ ess18 <- ess18[!(ess18$atchctr > 10), ] #atchctr: sense of belonging in the coun
 immigrant <- ess18[ess18$immg == "1", ] #making data only for immigrants
 ```
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+```{r, data setting and data cleaning}
 ess <- read_csv("ess18.csv")
 nomiss <- ess[ess$immg == "1", ] #without missing data
 sum(with(nomiss, atchctr > 10)) #only 31 people
@@ -41,7 +41,7 @@ hist(nomiss$citizen[nomiss$atchctr > 10])
 ```
 
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE}
+```{r, omitting variables}
 #omitting variables
 ##gender
 immigrant <- immigrant[!(immigrant$gndr > 2), ]
@@ -60,7 +60,7 @@ immigrant <- immigrant[!(immigrant$edu > 10), ]
 immigrant <- immigrant[!(immigrant$ctzcntr > 2), ]
 ```
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+```{r, rrecoding variables}
 #explanatory variables: citizenship, gender, religion, age, level of education
 ##outcome variable: sense of belonging
 ##N=4,028
@@ -88,8 +88,8 @@ immigrant$religion
 ##non-Christian = Jewish, Islam, Eastern religions, other non-Christian religions
 ```
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
-#step 0 : simple regression
+```{r, simple OLS and residual plot}
+#simple regression
 lm1 <- lm(atchctr ~ citizen + agea + religion + gndr +edu, data=immigrant)
 plot(immigrant$citizen, immigrant$agea)
 summary(lm1) #legal
@@ -124,7 +124,7 @@ hist(nomiss$atchctr[nomiss$ctzcntr > 2], seq(0, 10, 1),
      main="distribution of missing data", xlab="sense of belonging")
 ```
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+```{r, using declare design for my first model}
 library(quantreg)
 library(base)
 #population
@@ -196,7 +196,7 @@ ggplot(simulations, aes(p.value), label=value) +
   theme(legend.position = "bottom")
 ``` 
 
-```{r echo=FALSE, fig.show='hide', message=FALSE, warning=FALSE, cache=FALSE, results=FALSE}
+```{r full matching}
 #start of matching 
 #step 1: formula for score
 library(arm)
@@ -302,7 +302,7 @@ summary(diffswithinsets$meandiff)
 ```
 
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+```{r, declare design for my second test with the matched set}
 set.seed(1111)
 ##second estimator with matched dataset
 pop2 <- declare_population(immigrant0)
@@ -367,7 +367,7 @@ ggplot(sim2, aes(p.value), label=value) +
   theme(legend.position = "bottom")
 ```
 
-```{r, results=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig.show='hide'}
+```{r, mock analysis}
 #creating a fake data for mock analysis
 set.seed(111)
 fakey <- sample(seq(0,10,1), 4028, replace=TRUE)
