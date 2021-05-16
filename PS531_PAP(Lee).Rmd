@@ -382,6 +382,7 @@ mock2 <- lm(as.matrix(fakey) ~ citizen, fixed_effects = ~fm2,
 summary(mock1)
 summary(mock2)
 
+#using lm_robust
 mock3 <- lm_robust(as.matrix(fakey) ~ citizen, fixed_effects = ~fm2, 
             data=immigrant0, subset= !is.na(immigrant0$fm2))
 summary(mock3)
